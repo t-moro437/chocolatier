@@ -2,6 +2,19 @@
   margin: 10px;
   padding: 10px;
   border-radius: 5px;
+  font-size: 11px;
+}
+
+/* 文字の大きさ（size プロップ）
+   - medium は指定しない（親の大きさをそのまま使う） */
+.small {
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.large {
+  font-size: 18px;
+  padding: 14px;
 }
 
 .fadeOut {

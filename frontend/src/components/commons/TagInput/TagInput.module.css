@@ -1,0 +1,43 @@
+/* ① 全体：チップの列と入力欄を縦に並べる */
+.tagInput {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ② チップの列：横に並べて、入りきらなければ折り返す */
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;  /* li の先頭の「・」を消す */
+}
+
+/* ③ チップ 1 つ：角を丸くした札の形（色は BasicButton の緑に合わせる） */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;  /* 大きい値にすると、両端が半円になる */
+  background-color: #e3ece9;
+  color: #0b2b24;
+  font-size: 14px;
+}
+
+/* ④ × ボタン：枠と背景を消して、文字だけにする */
+.removeButton {
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: inherit;  /* 親（.tag）の文字色を使う */
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.removeButton:hover {
+  color: #c62828;  /* Message の error と同じ赤 */
+}

@@ -45,15 +45,20 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt', #JWT
 ]
 
+# ミドルウェア：すべてのリクエスト／レスポンスが「上から順に」通過する処理
+# - CorsMiddleware はレスポンスに CORS ヘッダー（Access-Control-Allow-*）を付ける
+# - CommonMiddleware などがリダイレクト等のレスポンスを先に返してしまうと
+#   CORS ヘッダーが付かずブラウザでエラーになるため、できるだけ上に置く
+#   （以前はリストの末尾にあった）
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware', # CommonMiddleware より前に置く
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
 ]
 
 ROOT_URLCONF = 'chocolatier_core.urls'
@@ -109,7 +114,11 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+# 言語設定
+# - 'ja' にすると、DRF / Django 標準のエラーメッセージが日本語になる
+#   例：「この項目は必須です。」「有効な画像をアップロードしてください。」
+# - 管理画面（/admin/）も日本語表示になる
+LANGUAGE_CODE = 'ja'
 
 TIME_ZONE = 'UTC'
 
@@ -129,20 +138,59 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS設定
-CORS_ALLOW_ALL_ORIGINS = True
+# - React（localhost:3000）と Django（localhost:8000）はポートが違う＝別オリジンなので、
+#   ブラウザは Django 側が許可しない限り API のレスポンスを JS に渡さない
+# - Cookie を使うため「全許可」は不可。React の開発サーバーだけ許可する
+#   （ブラウザの仕様で、Cookie 付きの通信は Access-Control-Allow-Origin: * を受け付けない）
+CORS_ALLOWED_ORIGINS = ['http://localhost:3000']
+# Cookie の送受信を許可（Access-Control-Allow-Credentials: true を返す）
+# - フロント側の axios の withCredentials: true とセットで必要
+CORS_ALLOW_CREDENTIALS = True
+# CSRF チェックで「信頼してよいリクエスト元」
+# - Django は更新系リクエストの Origin ヘッダーも確認するため、React のオリジンを登録する
+# - 登録しないと、CSRF トークンが正しくても 403（CSRF Failed: Origin checking failed）になる
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000']
+
 
 # カスタムユーザーモデルの使用
 AUTH_USER_MODEL = 'chocolatier_api.User'
 
-# 認証クラスを JWT 認証に設定
-REST_FRAMEWORK = {  
+# DRF（Django REST Framework）の共通設定
+# - 全 API にデフォルトで適用される。View ごとに authentication_classes /
+#   permission_classes を書くと、その View だけ上書きできる
+REST_FRAMEWORK = {
+    # 認証：「リクエストしてきたのは誰か」を判定する
+    # - authentication.py の CookieJWTAuthentication で、Cookie の access_token を検証する
+    # - 以前は simplejwt 標準の JWTAuthentication（Authorization ヘッダーを読む）だった
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    )
+        'chocolatier_api.authentication.CookieJWTAuthentication',
+    ),
+    # 権限：「その人がこの API を使ってよいか」を判定する
+    # - IsAuthenticated = ログイン必須。未ログインなら 401
+    # - 以前は未設定（＝ AllowAny 扱い）で、誰でも全 API を使えてしまっていた
+    # - ログイン・signup・refresh・logout・csrf は各 View で AllowAny にしている
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
 }
+
+# 認証 Cookie の設定（views.py の set_auth_cookies / authentication.py で使う）
+# - Cookie 名：ブラウザの DevTools > Application > Cookies にこの名前で表示される
+AUTH_COOKIE_ACCESS = 'access_token'
+AUTH_COOKIE_REFRESH = 'refresh_token'
+# - Secure 属性：True だと HTTPS の通信でしか Cookie を送らない
+#   開発は http なので False にしないと Cookie が送られない。本番(DEBUG=False)では自動で True
+AUTH_COOKIE_SECURE = not DEBUG
+# - SameSite 属性：別サイトから来たリクエストに Cookie を付けるかどうか
+#   'Lax' は、別サイトからの POST や fetch には付けない（CSRF 攻撃の軽減）
+#   localhost:3000 と localhost:8000 はポート違いでも「同じサイト」扱いなので、Lax でも送られる
+AUTH_COOKIE_SAMESITE = 'Lax'
 
 # アクセストークン有効期限 = 60分
 # リフレッシュトークン有効期限 = 1日
+# - Cookie の max_age もこの値に合わせている（views.py の set_auth_cookies）
+# - access が切れたら、フロントの client.ts が自動で /token/refresh/ を呼ぶ
+# - refresh も切れたら（1日）再ログインが必要
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
@@ -151,3 +199,29 @@ SIMPLE_JWT = {
 # ファイルアップロード用
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# =========================================================
+# 入力チェックの上限値（serializers.py で使用）
+# - フロントの src/utils/validators.ts でも同じ値を使うので、変えるときは両方そろえる
+# - 数字を serializers.py に直書きせず、ここにまとめることで変更漏れを防ぐ
+# =========================================================
+# アップロード画像の最大サイズ（バイト）
+# - 5 * 1024 * 1024 = 5MB（要件定義書「画像サイズ制限：最大 5MB / 枚」）
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024
+
+# アップロードを許可する拡張子（小文字で書く。大文字の .JPG も通る）
+ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp']
+
+# コメントの最大文字数
+# - モデルは TextField（上限なし）のまま、シリアライザーで制限する
+#   → DB の構造は変わらないので、マイグレーションは不要
+MAX_COMMENT_LENGTH = 1000
+
+# 1 つの Snap に付けられるタグの最大数
+# - 空のタグと重複を除いた「後」の個数で数える（serializers.py の clean_tag_names）
+MAX_TAGS_PER_SNAP = 10
+
+# タグ 1 つの最大文字数
+# - models.py の Tag.name（max_length=30）と同じ値にする
+#   （モデル側は DB の列の長さ、こちらはシリアライザーでの入力チェック用）
+MAX_TAG_LENGTH = 30

@@ -13,6 +13,49 @@
   flex-wrap: wrap;
 }
 
+/* 無限スクロールの目印：見えなくてよいが、高さが 0 だと検知しにくいので 1px にする */
+.scrollSentinel {
+  height: 1px;
+}
+
+/* 続きを読み込み中の表示 */
+.loadingText {
+  text-align: center;
+  color: gray;
+}
+
+/* タグの絞り込み：チップを横に並べて、入りきらなければ折り返す */
+.tagFilter {
+  width: 600px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+/* チップ 1 つ（TagInput のチップと同じ色） */
+.tagFilterChip {
+  padding: 4px 12px;
+  border: 1px solid #0b2b24;
+  border-radius: 999px;
+  background-color: #e3ece9;
+  color: #0b2b24;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* 選択中のチップ：BasicButton と同じ緑で塗る */
+.tagFilterChipActive {
+  background-color: #0b2b24;
+  color: #ffffff;
+}
+
+/* モーダルのタグ入力（中央寄せのモーダルの中で、左から並べる） */
+.modalTagArea {
+  margin: 10px 0;
+  text-align: left;
+}
+
 .modalContents{
   width: 400px;
 }
@@ -26,6 +69,13 @@
 .filePreview{
   width: 100px;
   object-fit: contain;
+}
+
+/* コメントの文字数カウンター（テキストエリアの右下に表示） */
+.commentCounter {
+  text-align: right;
+  font-size: 12px;
+  color: gray;
 }
 
 .modalDeleteArea{

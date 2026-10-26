@@ -1,20 +1,14 @@
 import styles from './SnapshotPanel.module.css';
-
-interface Photo {
-  id: number;
-  comment: string;
-  filePath: string;
-}
+import { MEDIA_URL } from '../../../api/client';  // 画像の URL は client.ts で一元管理
+import { Snap } from '../../../types/Snap';
 
 interface SnapshotPanelProps {
-  prmPhoto: Photo;      // 個別スナップ情報
+  prmPhoto: Snap;       // 個別スナップ情報（型は types/Snap.ts で共通）
   indexNum: number;     // 配列インデックスなど
   onclickAction?: () => void; // クリック時のハンドラ
 }
 
 function SnapshotPanel({ prmPhoto, indexNum, onclickAction }: SnapshotPanelProps) {
-  const MEDIA_URL = "http://localhost:8000/media/";
-
   return (
     <div className={styles.snapshotPanel} onClick={onclickAction}>
       <img

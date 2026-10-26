@@ -1,11 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
-import styles from './Header.module.css'; 
+import styles from './Header.module.css';
 
-function Layout() {
+function Header() {
   // AuthContextからユーザー情報とログアウト関数を取得
-  const { logout } = useAuth();
-  
+  const { user, logout } = useAuth();
+
   // ナビゲーション用のフック
   const navigate = useNavigate();
 
@@ -14,12 +14,14 @@ function Layout() {
     navigate('/');
   }
 
-  // ログイン状態を access_token の有無で判断
-  const isLoggedIn = !!localStorage.getItem('access_token');
+  // ログイン状態は AuthContext の user で判断する
+  // - user は state なので、ログイン／ログアウトするとすぐ再描画される
+  // - 以前は localStorage を直接読んでいたため、表示が切り替わらないことがあった
+  const isLoggedIn = !!user;
 
-  // ログアウト処理
-  const handleLogout = () => {
-    logout();
+  // ログアウト処理（サーバーに Cookie を消してもらってから移動する）
+  const handleLogout = async () => {
+    await logout();
     navigate('/signin');
   };
 
@@ -36,4 +38,4 @@ function Layout() {
   );
 }
 
-export default Layout;
+export default Header;

@@ -12,6 +12,7 @@
 backend/local_settings.py
 backend/db.sqlite3
 backend/db.sqlite3-journal
+backend/db.sqlite3.bak
 
 # Media files
 backend/media/

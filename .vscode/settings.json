@@ -1,0 +1,12 @@
+{
+  // Python：backend の venv を使う（Pylance の補完・import 解決のため）
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe",
+  "python.analysis.extraPaths": ["backend"],
+
+  // TypeScript：VSCode 同梱版ではなく、frontend に入っている版（4.9.5）を使う
+  // - 同梱版（6.x）だと tsconfig の target: es5 などが非推奨として警告される
+  // - ビルド（react-scripts）と同じ版で型チェックするため
+  "typescript.tsdk": "frontend/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "js/ts.tsdk.path": "frontend/node_modules/typescript/lib"
+}

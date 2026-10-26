@@ -1,4 +1,11 @@
 # API作成
+
+> ⚠️ 改修案件1〜4で、次のように変わりました。この記事は変更前の記録です。
+> - 自分の Snap だけを扱う（他人の Snap は 404）。投稿者はサーバー側で設定する → [07_cookieAuth.md](07_cookieAuth.md)
+> - 作成は `snap/create/`（multipart で画像を送る）。画像・コメントの入力チェックあり → [08_validation.md](08_validation.md)
+> - curl ではログインの Cookie と `X-CSRFToken` ヘッダーが必要 → [07_cookieAuth.md のテスト手順](07_cookieAuth.md#4-テスト手順powershellでcurlコマンドを実行)
+> - Snap にタグ（`tags`）が付き、一覧を `?tag=` で絞り込める → [10_tags.md](10_tags.md)
+> - 一覧は 12 件ずつ `{next, previous, results}` の形で返る → [11_infiniteScroll.md](11_infiniteScroll.md)
 - 本APIは Django REST Framework (DRF) を使用して実装している。
 - RESTful な CRUD 操作（一覧取得、登録、更新、削除）が可能。
 - generics.ListCreateAPIView / RetrieveUpdateDestroyAPIView により CRUD を簡単に実装

@@ -1,5 +1,7 @@
 # CORSの設定
 
+> ⚠️ 改修案件1で Cookie 認証にしたため、`CORS_ALLOW_ALL_ORIGINS = True` は使えなくなりました（Cookie 付きの通信では `*` が許可されないため）。今は `CORS_ALLOWED_ORIGINS` と `CORS_ALLOW_CREDENTIALS = True` を使い、フロントは共通の axios（`src/api/client.ts`）で `withCredentials: true` を付けています。詳しくは [07_cookieAuth.md](07_cookieAuth.md) を参照してください。
+
 - [CORSの設定](#corsの設定)
   - [1. Django (プロジェクトディレクトリ)](#1-django-プロジェクトディレクトリ)
     - [■ CORSの設定](#-corsの設定)

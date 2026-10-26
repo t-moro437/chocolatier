@@ -1,73 +1,111 @@
 openapi: 3.0.3
 info:
   title: Chocolatier API
-  version: 1.0.0
+  version: 3.0.0
   description: |
-    Django + SimpleJWT を用いた認証 API。  
-    - サインアップ（新規登録）  
-    - アクセストークン発行  
-    - ログインユーザー情報取得  
-    - アクセストークン更新  
-    - ファイルアップロード  
-    - Snap 一覧・登録・更新・削除  
+    Django REST Framework + SimpleJWT の API。
+
+    ## 変更履歴
+    - 3.0.0（2026-10-03）：タグ（改修案件3）と、一覧のページング（改修案件4）を追加。
+      **Snap 一覧のレスポンスが配列から `{next, previous, results}` に変わった**。
+      作成・更新のレスポンスが、一覧と同じ Snap の形になった
+    - 2.0.0（2026-09-29）：Cookie 認証（改修案件1）と入力チェック（改修案件2）
+
+    ## 認証（改修案件1）
+    - JWT は **HttpOnly Cookie**（`access_token` / `refresh_token`）でやり取りする。レスポンス本文にトークンは含まれない。
+    - ブラウザ（フロント）は `withCredentials: true` で Cookie を自動送信する。
+    - 更新系（POST / PUT / PATCH / DELETE）は、`csrftoken` Cookie の値を **`X-CSRFToken` ヘッダー**にも付ける（CSRF 対策）。
+      先に `GET /csrf/` を呼んで `csrftoken` を受け取っておく。
+    - 特に記載のない API はログイン必須。未ログインや期限切れは 401。
+      access_token が切れたら `POST /token/refresh/` で取り直す。
+
+    ## 権限
+    - Snap は **自分の投稿だけ** を扱える。他人の Snap の ID を指定すると 404。
+    - サインアップは **管理者（is_staff）だけ** が使える（改修案件2）。
+
+    ## 入力チェック（改修案件2）
+    - 画像：jpg / jpeg / png / gif / webp、5MB 以下、中身が画像であること
+    - コメント：1000 文字以内
+    - タグ：1 つの Snap に 10 個まで、1 タグ 30 文字まで（改修案件3）
+    - エラーは `{フィールド名: [メッセージ, ...]}` の形で、日本語のメッセージを返す。
+      ただし `tags` の要素ごとのエラー（`null` を送ったなど）は `{"tags": {"0": [メッセージ]}}` の形になる。
+
+    ## タグ（改修案件3）
+    - Snap には、タグ名の配列 `tags`（例：`["カフェ", "旅行"]`）が付く。
+    - 作成・更新でタグ名を送ると、まだないタグは自動で作られる。前後の空白は取り除かれ、空のタグと重複は無視される。
+    - 一覧は `?tag=<タグ名>` で絞り込める。絞り込みの候補は `GET /chocolatier_api/tags/` で取る。
+
+    ## ページング（改修案件4）
+    - Snap 一覧は、新しい順で **12 件ずつ** 返す（cursor 方式）。
+    - 続きは、レスポンスの `next` の URL をそのまま呼ぶ。最後まで読むと `next` は `null`。
+    - cursor 方式なので、読んでいる途中で投稿が増えたり減ったりしても、重複や抜けが起きない。
+    - `?tag=` で絞り込んだときも、`next` の URL に `tag` が引き継がれる。
+
+    ## 詳しい解説
+    - docs/03_articles/07_cookieAuth.md（認証・curl / Postman での呼び方）
+    - docs/03_articles/08_validation.md（入力チェック）
+    - docs/03_articles/10_tags.md（タグ）
+    - docs/03_articles/11_infiniteScroll.md（ページングと無限スクロール）
 
 servers:
-  - url: http://127.0.0.1:8000
+  - url: http://localhost:8000
 
 tags:
   - name: Auth
-    description: 認証関連のAPI
+    description: 認証関連の API
+  - name: User
+    description: ユーザー関連の API
   - name: Snap
-    description: Snap関連のAPI
+    description: Snap 関連の API
+  - name: Tag
+    description: タグ関連の API
+
+# 特に記載のない API はログイン必須（access_token Cookie）
+security:
+  - cookieAuth: []
 
 paths:
-  /chocolatier_api/signup/:
-    post:
+  # =========================================================
+  # Auth
+  # =========================================================
+  /csrf/:
+    get:
       tags: [Auth]
-      summary: ユーザー登録
-      description: 新しいユーザーを作成します。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - username
-                - email
-                - password
-              properties:
-                username:
-                  type: string
-                  example: alice2
-                email:
-                  type: string
-                  format: email
-                  example: alice2@example.com
-                password:
-                  type: string
-                  format: password
-                  example: your-secret-password
+      summary: CSRF トークン発行
+      description: |
+        `csrftoken` Cookie を発行する。フロントは起動時に呼ぶ。
+        以降の更新系リクエストでは、この値を `X-CSRFToken` ヘッダーに付ける。
+      security: []
       responses:
-        "201":
-          description: ユーザーが正常に作成されました
-        "400":
-          description: 入力値エラー
+        "200":
+          description: csrftoken Cookie が発行された
+          headers:
+            Set-Cookie:
+              description: "`csrftoken=...`（HttpOnly ではないので JS から読める）"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: CSRF cookie set
 
   /token/:
     post:
       tags: [Auth]
-      summary: アクセストークン発行
-      description: ユーザー名とパスワードを使ってアクセストークンとリフレッシュトークンを取得します。
+      summary: ログイン
+      description: |
+        ユーザー名とパスワードで認証し、`access_token`（60分）と `refresh_token`（1日）を
+        HttpOnly Cookie にセットする。レスポンス本文にトークンは含まれない。
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - username
-                - password
+              required: [username, password]
               properties:
                 username:
                   type: string
@@ -78,163 +116,560 @@ paths:
                   example: your-secret-password
       responses:
         "200":
-          description: トークンが発行されました
+          description: ログイン成功
+          headers:
+            Set-Cookie:
+              description: "`access_token=...; HttpOnly; SameSite=Lax` と `refresh_token=...; HttpOnly; SameSite=Lax`"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: ログインしました
+        "400":
+          $ref: '#/components/responses/ValidationError'
         "401":
-          description: 認証エラー
-
-  /chocolatier_api/user-info/:
-    get:
-      tags: [Auth]
-      summary: ユーザー情報取得
-      description: アクセストークンを用いてログイン中のユーザー情報を取得します。
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: ユーザー情報が取得されました
-        "401":
-          description: 認証エラー
+          description: ユーザー名またはパスワードが違う（どちらが違うかは返さない）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+              example:
+                detail: ユーザー名またはパスワードが違います
 
   /token/refresh/:
     post:
       tags: [Auth]
       summary: アクセストークン更新
-      description: リフレッシュトークンを使用して新しいアクセストークンを取得します。
+      description: |
+        `refresh_token` Cookie を使って新しい `access_token` を発行し、Cookie を更新する。
+        リクエスト本文は不要。フロントは API が 401 を返したときに自動で呼ぶ。
+      security:
+        - refreshCookie: []
+      responses:
+        "200":
+          description: access_token Cookie が更新された
+          headers:
+            Set-Cookie:
+              description: "`access_token=...; HttpOnly; SameSite=Lax`"
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: トークンを更新しました
+        "401":
+          description: refresh_token がない、または期限切れ・不正（再ログインが必要）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+              examples:
+                missing:
+                  value:
+                    detail: refresh token がありません
+                invalid:
+                  value:
+                    detail: refresh token が無効です
+
+  /logout/:
+    post:
+      tags: [Auth]
+      summary: ログアウト
+      description: |
+        `access_token` / `refresh_token` Cookie を削除する。
+        HttpOnly Cookie は JS から消せないため、サーバーが消す。未ログインでも呼べる。
+      security: []
+      responses:
+        "200":
+          description: Cookie が削除された
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: ログアウトしました
+
+  # =========================================================
+  # User
+  # =========================================================
+  /chocolatier_api/user-info/:
+    get:
+      tags: [User]
+      summary: ログイン中のユーザー情報
+      description: フロントは起動時とログイン直後に呼び、ログイン中かどうかを判断する。
+      responses:
+        "200":
+          description: ユーザー情報
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /chocolatier_api/signup/:
+    post:
+      tags: [User]
+      summary: ユーザー登録（管理者のみ）
+      description: |
+        新しい一般ユーザー（is_staff=False）を作成する。サインアップ画面はなく、
+        運用で Postman などから呼ぶ。**管理者でログインしている必要がある**。
+      security:
+        - cookieAuth: []
+          csrfToken: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required:
-                - refresh
+              required: [username, email, password]
               properties:
-                refresh:
+                username:
                   type: string
+                  example: bob
+                email:
+                  type: string
+                  format: email
+                  example: bob@example.com
+                password:
+                  type: string
+                  format: password
+                  example: your-secret-password
+      responses:
+        "201":
+          description: ユーザーが作成された
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+              example:
+                message: ユーザー登録が完了しました
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: 管理者ではない、または CSRF トークンがない
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+              examples:
+                notAdmin:
+                  value:
+                    detail: このアクションを実行する権限がありません。
+                csrf:
+                  value:
+                    detail: "CSRF Failed: CSRF token missing."
+
+  # =========================================================
+  # Snap
+  # =========================================================
+  /chocolatier_api/snap/:
+    get:
+      tags: [Snap]
+      summary: Snap 一覧（12 件ずつ）
+      description: |
+        ログインユーザー自身の Snap を、新しい順（created_at の降順）で 12 件ずつ返す。
+        続きは `next` の URL を呼ぶ（`cursor` を自分で組み立てる必要はない）。
+      parameters:
+        - in: query
+          name: tag
+          required: false
+          description: このタグが付いた Snap だけに絞る（完全一致）
+          schema:
+            type: string
+            example: 旅行
+        - in: query
+          name: cursor
+          required: false
+          description: 続きの位置。`next` / `previous` の URL に入っているものを使う（中身は気にしなくてよい）
+          schema:
+            type: string
       responses:
         "200":
-          description: 新しいアクセストークンが発行されました
+          description: Snap 一覧（最大 12 件）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapPage'
+        "404":
+          description: cursor が不正（DRF は NotFound として返す）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Detail'
+              example:
+                detail: カーソルが不正です。
         "401":
-          description: 認証エラー
+          $ref: '#/components/responses/Unauthorized'
 
-  /chocolatier_api/files/upload/:
+  /chocolatier_api/snap/create/:
     post:
       tags: [Snap]
-      summary: ファイルアップロード
-      description: 認証ユーザーがファイルをアップロードします。
+      summary: Snap 登録
+      description: |
+        画像をアップロードして Snap を作成する。投稿者はサーバー側でログインユーザーに設定する
+        （`user` を送っても無視される）。画像は `media/uploads/` に保存される。
       security:
-        - bearerAuth: []
+        - cookieAuth: []
+          csrfToken: []
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required:
-                - upload
-                - name
+              required: [upload]
               properties:
                 upload:
                   type: string
                   format: binary
-                  description: アップロードするファイル
-                name:
+                  description: 画像ファイル（jpg / jpeg / png / gif / webp、5MB 以下）
+                comment:
                   type: string
-                  example: サンプル画像
+                  maxLength: 1000
+                  example: 思い出の一枚
+                tags:
+                  type: array
+                  description: |
+                    付けるタグ名（任意、10 個まで・1 つ 30 文字まで）。
+                    multipart なので、同じキー `tags` を繰り返して送る（`tags=旅行` と `tags=カフェ`）。
+                    送らなければタグなし。
+                  maxItems: 10
+                  items:
+                    type: string
+                    maxLength: 30
+                  example: [旅行, カフェ]
+            encoding:
+              tags:
+                style: form
+                explode: true
       responses:
         "201":
-          description: ファイルが正常にアップロードされました
+          description: Snap が作成された（一覧と同じ形）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snap'
         "400":
           description: 入力値エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              examples:
+                tooLarge:
+                  summary: 5MB を超える
+                  value:
+                    upload: [画像サイズは5MB以下にしてください]
+                notImage:
+                  summary: 中身が画像ではない
+                  value:
+                    upload: [有効な画像をアップロードしてください。アップロードされたファイルは画像でないか、壊れた画像です。]
+                extension:
+                  summary: 許可されていない拡張子
+                  value:
+                    upload: [ファイル拡張子 “bmp” は許可されていません。許可されている拡張子は jpg, jpeg, png, gif, webp です。]
+                commentTooLong:
+                  summary: コメントが 1000 文字を超える
+                  value:
+                    comment: [この項目は1000文字より長くならないようにしてください。]
+                tooManyTags:
+                  summary: タグが 10 個を超える
+                  value:
+                    tags: [タグは10個までにしてください]
+                tagTooLong:
+                  summary: タグが 30 文字を超える
+                  value:
+                    tags: [タグ「…」が長すぎます。30文字以内にしてください]
         "401":
-          description: 認証エラー
-
-  /chocolatier_api/snap/:
-    get:
-      tags: [Snap]
-      summary: Snap一覧
-      description: 登録されている Snap をすべて取得します。
-      responses:
-        "200":
-          description: Snap 一覧
-    post:
-      tags: [Snap]
-      summary: Snap登録
-      description: 新しい Snap を作成します。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Snap'
-      responses:
-        "201":
-          description: Snap が作成されました
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/CsrfFailed'
 
   /chocolatier_api/snap/{id}/:
-    put:
+    parameters:
+      - $ref: '#/components/parameters/SnapId'
+    get:
       tags: [Snap]
-      summary: Snap更新
-      description: 指定した Snap を更新します。
-      parameters:
-        - in: query
-          name: id
-          required: true
-          schema:
-            type: integer
+      summary: Snap 詳細
+      responses:
+        "200":
+          description: Snap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snap'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Snap]
+      summary: Snap 更新（コメント・タグ）
+      description: |
+        コメントとタグを更新する。画像は変更できない。PUT も同じ動きをする。
+        送らなかった項目は変わらない（`tags` を送らなければタグはそのまま）。
+      security:
+        - cookieAuth: []
+          csrfToken: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Snap'
+              type: object
+              properties:
+                comment:
+                  type: string
+                  maxLength: 1000
+                  example: コメントを更新しました
+                tags:
+                  type: array
+                  description: |
+                    付けるタグ名。送った内容に**入れ替わる**（足りないタグは付け、余分なタグは外す）。
+                    空の配列 `[]` を送ると、タグをすべて外す。
+                  maxItems: 10
+                  items:
+                    type: string
+                    maxLength: 30
+                  example: [カフェ]
       responses:
         "200":
-          description: Snap が更新されました
+          description: 更新後の Snap（一覧と同じ形）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snap'
+        "400":
+          description: 入力値エラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+              examples:
+                commentTooLong:
+                  summary: コメントが 1000 文字を超える
+                  value:
+                    comment: [この項目は1000文字より長くならないようにしてください。]
+                tooManyTags:
+                  summary: タグが 10 個を超える
+                  value:
+                    tags: [タグは10個までにしてください]
+                nullTag:
+                  summary: タグに null を入れた（要素ごとのエラー。"0" は何番目か）
+                  value:
+                    tags:
+                      "0": [この項目はnullにできません。]
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/CsrfFailed'
+        "404":
+          $ref: '#/components/responses/NotFound'
     delete:
       tags: [Snap]
-      summary: Snap削除
-      description: 指定した Snap を削除します。
-      parameters:
-        - in: query
-          name: id
-          required: true
-          schema:
-            type: integer
+      summary: Snap 削除
+      description: |
+        Snap と、紐づく画像ファイル（DB と実ファイル）を削除する。
+        タグの紐付け（snap_tags）も消える。タグ自体（tags）は残る。
+      security:
+        - cookieAuth: []
+          csrfToken: []
       responses:
         "204":
-          description: Snap が削除されました
+          description: 削除された
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/CsrfFailed'
         "404":
-          description: Snap が存在しません
+          $ref: '#/components/responses/NotFound'
+
+  # =========================================================
+  # Tag
+  # =========================================================
+  /chocolatier_api/tags/:
+    get:
+      tags: [Tag]
+      summary: 自分が使っているタグの一覧（絞り込みの候補）
+      description: |
+        ログインユーザーの Snap に付いているタグ名を、重複なしで名前順に返す。
+        他のユーザーだけが使っているタグは含まれない。
+      responses:
+        "200":
+          description: タグ名の配列
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+              example: [カフェ, 旅行]
+        "401":
+          $ref: '#/components/responses/Unauthorized'
 
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: ログイン（POST /token/）でセットされる HttpOnly Cookie
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+      description: ログイン（POST /token/）でセットされる HttpOnly Cookie
+    csrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRFToken
+      description: "`csrftoken` Cookie（GET /csrf/ で発行）と同じ値を付ける。更新系で必須"
+
+  parameters:
+    SnapId:
+      in: path
+      name: id
+      required: true
+      description: Snap の ID（自分の Snap のみ。他人の ID は 404）
+      schema:
+        type: integer
+        example: 1
+
+  responses:
+    Unauthorized:
+      description: 未ログイン、または access_token が期限切れ・不正
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Detail'
+          example:
+            detail: 認証情報が含まれていません。
+    CsrfFailed:
+      description: X-CSRFToken ヘッダーがない、または値が一致しない
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Detail'
+          example:
+            detail: "CSRF Failed: CSRF token missing."
+    NotFound:
+      description: Snap が存在しない、または他人の Snap（どちらも同じレスポンス）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Detail'
+          example:
+            detail: No Snap matches the given query.
+    ValidationError:
+      description: 入力値エラー
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrors'
 
   schemas:
-    Snap:
+    Message:
       type: object
-      required:
-        - user
-        - file
-        - comment
+      properties:
+        message:
+          type: string
+
+    Detail:
+      type: object
+      properties:
+        detail:
+          type: string
+
+    ValidationErrors:
+      type: object
+      description: |
+        フィールド名ごとのエラーメッセージ。
+        配列の項目（tags）の要素ごとのエラーは、`{"0": [メッセージ]}` のように何番目かをキーにしたオブジェクトになる。
+      additionalProperties:
+        oneOf:
+          - type: array
+            items:
+              type: string
+          - type: object
+            additionalProperties:
+              type: array
+              items:
+                type: string
+      example:
+        upload: [画像サイズは5MB以下にしてください]
+
+    User:
+      type: object
       properties:
         id:
           type: integer
           example: 1
-        user:
+        username:
+          type: string
+          example: alice
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+
+    Snap:
+      type: object
+      properties:
+        id:
           type: integer
           example: 1
         file:
           type: integer
+          description: File の ID
           example: 1
+        filePath:
+          type: string
+          description: MEDIA_URL（/media/）からの相対パス
+          example: uploads/photo_20260930120000.png
         comment:
           type: string
-          example: これはcurlからのテストです
+          nullable: true
+          example: 思い出の一枚
+        tags:
+          type: array
+          description: 付いているタグ名（名前順）。タグなしなら空の配列
+          items:
+            type: string
+          example: [カフェ, 旅行]
         created_at:
           type: string
           format: date-time
-          example: "2025-08-30T12:34:56Z"
+          example: "2026-09-30T12:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          example: "2026-09-30T12:00:00Z"
+
+    SnapPage:
+      type: object
+      description: Snap 一覧の 1 ページ分（12 件ずつ）
+      properties:
+        next:
+          type: string
+          nullable: true
+          description: 続きを取る URL。最後まで読んだら null
+          example: http://localhost:8000/chocolatier_api/snap/?cursor=cD0yMDI2LTA5LTMw&tag=%E6%97%85%E8%A1%8C
+        previous:
+          type: string
+          nullable: true
+          description: 前を取る URL。最初のページなら null（無限スクロールでは使わない）
+          example: null
+        results:
+          type: array
+          maxItems: 12
+          items:
+            $ref: '#/components/schemas/Snap'
