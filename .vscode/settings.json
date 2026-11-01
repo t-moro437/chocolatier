@@ -8,5 +8,10 @@
   // - ビルド（react-scripts）と同じ版で型チェックするため
   "typescript.tsdk": "frontend/node_modules/typescript/lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
-  "js/ts.tsdk.path": "frontend/node_modules/typescript/lib"
+  "js/ts.tsdk.path": "frontend/node_modules/typescript/lib",
+
+  // bat ファイル：Shift_JIS で開く・保存する（cmd が Shift_JIS で読むため。UTF-8 だと日本語が化ける）
+  "[bat]": {
+    "files.encoding": "shiftjis"
+  }
 }
